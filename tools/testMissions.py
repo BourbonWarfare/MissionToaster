@@ -147,7 +147,9 @@ def test_mission_get_folder_size(mission_path):
     # Get the folder's size - ToDo: size should be binned sqm, could do cfgConvert on sqm?
     size = 0
     for f in os.scandir(mission_path):
-        size += os.path.getsize(f)
+        if (not (f.name.endswith(".sqm.txt") or f.name.endswith(".ext.txt") or f.name.endswith(".ext.bin"))):
+            size += os.path.getsize(f)
+    for f in os.scandir(os.path.join(mission_path, "loadouts")): size += os.path.getsize(f)
     return (size / 1024)
 
 
@@ -224,11 +226,11 @@ def test_mission_run_checks(config, mission_world, test_payload):
             missionError = True
             missionLogs.append(f"[Missing backpack] {backpack}")
 
-    icon = ":green_circle"
+    icon = ":green_circle:"
     if (missionError):
-        icon = ":red_circle"
+        icon = ":red_circle:"
     elif (missionWarning):
-        icon = ":yellow_circle"
+        icon = ":yellow_circle:"
 
     return icon, missionLogs
 

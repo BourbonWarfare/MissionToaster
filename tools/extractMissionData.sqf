@@ -14,6 +14,7 @@ private _allObjectTypes = [];
 private _objectCount = 0;
 private _fnc_getEntities = {
 	params ["_config"];
+	if (!isClass (_config >> "Entities")) exitWith {};
 	private _entities = "isClass _x" configClasses (_config >> "Entities");
 	{
 		private _entity = _x;
