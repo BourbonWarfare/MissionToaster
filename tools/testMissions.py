@@ -12,20 +12,20 @@ bwmf_min_date = datetime(2015, 1, 1)
 
 # file paths
 path_project = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-path_cfgconvert_exe = os.path.join(path_project, "bin", "CfgConvert.exe")
 path_sqfvm_exe = os.path.join(path_project, "bin", "sqfvm.exe")
-path_extract_data_sqf = os.path.join(path_project, "tools", "extractData.sqf")
+path_cfgconvert_exe = os.path.join(path_project, "bin", "CfgConvert.exe")
+path_extract_data_sqf = os.path.join(path_project, "tools", "extractMissionData.sqf")
 # config path
-path_config_data_current_json = os.path.join(path_project, "configs", "config_data_current_json.json")
+path_config_data_current_json = os.path.join(path_project, "configs", "current.json")
 config_data_current = None
-path_config_data_staging_json = os.path.join(path_project, "configs", "config_data_staging_json.json")
+path_config_data_staging_json = os.path.join(path_project, "configs", "staging.json")
 config_data_staging = None
 
 
 def init_data():
     # Check tools exist
     if (not os.path.isfile(path_sqfvm_exe)): raise Exception(f"Missing {path_sqfvm_exe}")
-    # if (not os.path.isfile(path_cfgconvert_exe)): raise Exception(f"Missing {path_cfgconvert_exe}")
+    if (not os.path.isfile(path_cfgconvert_exe)): raise Exception(f"Missing {path_cfgconvert_exe}")
     if (not os.path.isfile(path_extract_data_sqf)): raise Exception(f"Missing {path_extract_data_sqf}")
     # Load current (and optional staging) configs
     global config_data_current
@@ -40,22 +40,45 @@ def init_data():
         logging.warning(f"Missing staging config: {path_config_data_staging_json}")
 
 
-def test_mission_prepare_files(mission_path):
-    # Check folder for important files
+def test_mission_get_mission_version(path_mission_sqm):
+    raw_version = ""
     try:
-        path_mission_sqm = os.path.join(mission_path, "mission.sqm")
-        path_description_ext = os.path.join(mission_path, "description.ext")
         mission_sqm = open(path_mission_sqm, "r")
-        raw_version = ""
         for line in mission_sqm:
             if (line.startswith("version=") or line.startswith("version =")):
                 raw_version = line
                 break
-        mission_sqm.close()
-        if (raw_version == ""):
-            raise Exception(f"Version not found?")
-    except Exception as e:
-        raise Exception(f"[mission.sqm (check unbinned/version54)] {e}")
+    except Exception: pass
+    finally: mission_sqm.close()
+    return raw_version
+
+
+def test_mission_prepare_files(mission_path):
+    test_logs = []
+    path_mission_sqm = os.path.join(mission_path, "mission.sqm")
+    path_description_ext = os.path.join(mission_path, "description.ext")
+    path_cleanup_bat = os.path.join(mission_path, "cleanup.bat")
+    path_mission_txt = os.path.join(mission_path, "mission.sqm.txt")
+    path_description_bin = os.path.join(mission_path, "description.ext.bin")
+    path_description_txt = os.path.join(mission_path, "description.ext.txt")
+
+    # Check if mission.sqm is binerized
+    version = test_mission_get_mission_version(path_mission_sqm)
+    if (version != ""): test_logs.append(f"Mission not binerized")
+
+    # Check if cleanup.bat ran
+    if os.path.isfile(path_cleanup_bat): test_logs.append(f"cleanup.bat not ran")
+
+    cmd_cfgconvert = [path_cfgconvert_exe, "-txt", "-dst", path_mission_txt, path_mission_sqm]
+    result = subprocess.run(cmd_cfgconvert, capture_output=True, text=True, timeout=6)
+    logging.debug(f"converting mission.sqm {result.returncode}")
+    # Convert description.ext to bin and then back to txt (fixes some pedantic macros)
+    cmd_cfgconvert = [path_cfgconvert_exe, "-bin", "-dst", path_description_bin, path_description_ext]
+    subprocess.run(cmd_cfgconvert, capture_output=True, text=True, timeout=6)
+    cmd_cfgconvert = [path_cfgconvert_exe, "-txt", "-dst", path_description_txt, path_description_bin]
+    subprocess.run(cmd_cfgconvert, capture_output=True, text=True, timeout=6)
+
+    return test_logs
 
 
 def test_mission_run_SQFVM(mission_path):
@@ -67,7 +90,7 @@ def test_mission_run_SQFVM(mission_path):
         logging.warning(f"Cleaning up old adapter: {path_test_adapter}")
         os.remove(path_test_adapter)
     f = open(path_test_adapter, "x")
-    f.write('class X_configEXT {\n  #include "description.ext" \n};\n class X_configSQM {\n  #include "mission.sqm"\n};')
+    f.write('class X_configEXT {\n  #include "description.ext.txt" \n};\n class X_configSQM {\n  #include "mission.sqm.txt"\n};')
     f.close()
 
     # Run SQFVM
@@ -77,7 +100,7 @@ def test_mission_run_SQFVM(mission_path):
 
     logging.debug(f"SQFVM called with: {cmd_sqfvm}")
     result = subprocess.run(cmd_sqfvm, capture_output=True, text=True, timeout=120)
-    logging.info(f"SQFVM returned: result.returncod")
+    logging.info(f"SQFVM returned: {result.returncode}")
     os.remove(path_test_adapter)  # cleanup adapter
     if(result.returncode != 0): logging.error(f"SQFVM error: {result.returncode}")
 
@@ -129,6 +152,10 @@ def test_mission_get_folder_size(mission_path):
 
 
 def test_mission_run_checks(config, mission_world, test_payload):
+    missionError = False
+    missionWarning = False
+    missionLogs = []
+
     CfgWeapons = config["CfgWeapons"]
     CfgMagazines = config["CfgMagazines"]
     CfgVehicles = config["CfgVehicles"]
@@ -136,7 +163,9 @@ def test_mission_run_checks(config, mission_world, test_payload):
     CfgWorlds = config["CfgWorlds"]
 
     # Make sure map Exists
-    if (not (mission_world) in CfgWorlds): raise Exception(f"[Missing Map] {mission_world}")
+    if (not (mission_world) in CfgWorlds):
+        missionError = True
+        missionLogs.append(f"[Missing Map] {mission_world}")
 
     # get results from payload
     info = json.loads(test_payload)
@@ -144,6 +173,7 @@ def test_mission_run_checks(config, mission_world, test_payload):
     mission_addons = info["addons"]
     mission_entities = info["entities"]
     mission_weapons = info["weapons"]
+    mission_items = info["items"]
     mission_attachments = info["attachments"]
     mission_magazines = info["magazines"]
     mission_backpacks = info["backpacks"]
@@ -155,28 +185,52 @@ def test_mission_run_checks(config, mission_world, test_payload):
     if (mission_bwmfDate == ""): raise Exception("[BWMF version unknown]")
     if (mission_bwmfDate.startswith("2020/20")): mission_bwmfDate = "2020/12/20"  # WTF
     if (datetime.strptime(mission_bwmfDate, "%Y/%m/%d") < bwmf_min_date):
-        raise Exception(f"[BWMF version unsupported] {mission_bwmfDate} < {bwmf_min_date}")
+        missionError = True
+        missionLogs.append(f"[BWMF version unsupported] {mission_bwmfDate} < {bwmf_min_date}")
 
     # Check all loadouts are valid
     for addon in mission_addons:
         if (not addon in CfgPatches):
-            raise Exception(f"[Missing addon] {addon}")
+            missionError = True
+            missionLogs.append(f"[Missing addon] {addon}")
     for entity in mission_entities:
         if (not entity in CfgVehicles):
-            raise Exception(f"[Missing entity] {entity}")
+            missionError = True
+            missionLogs.append(f"[Missing entity] {entity}")
     for weapon in mission_weapons:
         if (not weapon in CfgWeapons):
-            raise Exception(f"[Missing weapon] {weapon}")
-    # for attachment in mission_attachments: #todo this is non critical
-    #     if (not attachment in CfgWeapons):
-    #         raise Exception(f"[Missing attachment] {attachment}")
+            missionError = True
+            missionLogs.append(f"[Missing weapon] {weapon}")
+        else:
+            compatibleMags = CfgWeapons[weapon]["compatibleMagazines"]
+            # check we have at least 1 compatible mag (ignore 0/1 mag weapons, probably single use launcher)
+            if (len(compatibleMags) > 2) and (len(set(mission_magazines).intersection(set(compatibleMags))) == 0):
+                missionError = True
+                missionLogs.append(f"[No compatible mags] {weapon}")
+    for item in mission_items:
+        if (not (item in CfgMagazines or item in CfgWeapons)):
+            missionError = True
+            missionLogs.append(f"[Missing item] {item}")
+    for attachment in mission_attachments:
+        if (not attachment in CfgWeapons):
+            missionWarning = True
+            missionLogs.append(f"[Missing attachment] {attachment}")
     for magazine in mission_magazines:
         if (not (magazine in CfgMagazines or magazine in CfgWeapons)):
-            raise Exception(f"[Missing magazine] {magazine}")
+            missionError = True
+            missionLogs.append(f"[Missing magazine] {magazine}")
     for backpack in mission_backpacks:
         if (not backpack in CfgVehicles):
-            raise Exception(f"[Missing backpack] {backpack}")
-    return
+            missionError = True
+            missionLogs.append(f"[Missing backpack] {backpack}")
+
+    icon = ":green_circle"
+    if (missionError):
+        icon = ":red_circle"
+    elif (missionWarning):
+        icon = ":yellow_circle"
+
+    return icon, missionLogs
 
 
 def test_mission(mission_path):
@@ -185,7 +239,7 @@ def test_mission(mission_path):
 
     results_log = []
     icon_current = ":purple_circle:"
-    icon_staging = "?" if (config_data_staging is not None) else ""
+    icon_staging = "" if (config_data_staging is None) else ":brown_circle:"
 
     mission_size = 0  # may not be availble if error happens in parsing
     mission_world_description = "?"  # may not be availble if error happens in parsing
@@ -202,31 +256,29 @@ def test_mission(mission_path):
             mission_world_description = config_data_current["CfgWorlds"][mission_world]["description"]
         # Get Folder Size
         mission_size = test_mission_get_folder_size(mission_path)
+        # Debin Mission.sqm
+        test_logs = test_mission_prepare_files(mission_path)
+        results_log.extend([f"  {line}" for line in test_logs])
         # Run SQFVM
         test_payload = test_mission_run_SQFVM(mission_path)
         # Get info from SQFVM output
         mission_author, mission_objectCount, mission_onLoadName = test_mission_payload_get_info(test_payload)
 
+        # tests on current config
+        icon_current, test_logs = test_mission_run_checks(config_data_current, mission_world, test_payload)
+        results_log.extend([f"  {line}" for line in test_logs])
+
         # try tests on staging config if it exists
         if (config_data_staging is not None):
-            try:
-                test_mission_run_checks(config_data_staging, mission_world, test_payload)
-            except Exception as e:
-                results_log.append(f"  staging-config: {e}")
-                icon_staging = ":red_circle:"
-            else:
-                icon_staging = ":green_circle:"
-
-        # try tests on current config
-        test_mission_run_checks(config_data_current, mission_world, test_payload)
+            icon_staging, test_logs = test_mission_run_checks(config_data_current, mission_world, test_payload)
+            results_log.extend([f"  {line} [STAGING]" for line in test_logs])
 
     except Exception as e:
-        logging.error(f"{folder_name} failed because: {e}")
-        results_log.append(f"  {e}")
-        icon_current = ":red_circle:"
+        logging.error(f"{folder_name} threw {e}")
+        results_log.append(f"  threw {e}!")
+        icon_current = ":brown_circle:"
     else:
-        logging.info(f"Mission [{folder_name}] Passed")
-        icon_current = ":green_circle:"
+        logging.info(f"Mission [{folder_name}] Finished Tests")
 
     if (len(results_log) > 0): results_log.insert(0, f"{folder_name}:")
 
@@ -234,7 +286,7 @@ def test_mission(mission_path):
     if (icon_staging != ""): formated_line += f" {icon_staging} |"
 
     # logging.debug(formated_line)
-    return results_log, formated_line
+    return results_log[:5], formated_line
 
 
 def main():
@@ -253,10 +305,10 @@ def main():
     body_details = ["", "", "```"]
 
     if (config_data_staging is None):
-        body_table.append("| Mission | World | Author | Objects | Size | State |")
+        body_table.append("| Mission | World | Author | Objects | Size | Result |")
         body_table.append("|------------|------|------|------|------|------------|")
     else:
-        body_table.append("| Mission | World | Author | Objects | Size | State | Staging |")
+        body_table.append("| Mission | World | Author | Objects | Size | Result | Result-Staging |")
         body_table.append("|------------|------|------|------|------|------------|------------|")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
