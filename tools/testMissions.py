@@ -174,14 +174,15 @@ def test_mission_run_checks(config, mission_world, test_payload):
     mission_bwmfDate = info["bwmfDate"]
     mission_addons = info["addons"]
     mission_entities = info["entities"]
-    mission_weapons = info["weapons"]
-    mission_items = info["items"]
-    mission_attachments = info["attachments"]
-    mission_magazines = info["magazines"]
-    mission_backpacks = info["backpacks"]
+    mission_loadouts = info["loadouts"]
+
+    # mission_weapons = info["weapons"]
+    # mission_items = info["items"]
+    # mission_attachments = info["attachments"]
+    # mission_magazines = info["magazines"]
+    # mission_backpacks = info["backpacks"]
     logging.debug(f"mission_bwmfDate: {mission_bwmfDate}")
-    logging.debug(
-        f"mission [addons {len(mission_addons)}] [entities: {len(mission_entities)}] [weapons: {len(mission_weapons)}] [magazines: {len(mission_magazines)}] [backpacks: {len(mission_backpacks)}]")
+    logging.debug(f"mission [addons {len(mission_addons)}] [entities: {len(mission_entities)}] [loadouts: {len(mission_loadouts)}]")
 
     # Check BWMF date
     if (mission_bwmfDate == ""): raise Exception("[BWMF version unknown]")
@@ -190,7 +191,6 @@ def test_mission_run_checks(config, mission_world, test_payload):
         missionError = True
         missionLogs.append(f"[BWMF version unsupported] {mission_bwmfDate} < {bwmf_min_date}")
 
-    # Check all loadouts are valid
     for addon in mission_addons:
         if (not addon in CfgPatches):
             missionError = True
@@ -199,32 +199,34 @@ def test_mission_run_checks(config, mission_world, test_payload):
         if (not entity in CfgVehicles):
             missionError = True
             missionLogs.append(f"[Missing entity] {entity}")
-    for weapon in mission_weapons:
-        if (not weapon in CfgWeapons):
-            missionError = True
-            missionLogs.append(f"[Missing weapon] {weapon}")
-        else:
-            compatibleMags = CfgWeapons[weapon]["compatibleMagazines"]
-            # check we have at least 1 compatible mag (ignore 0/1 mag weapons, probably single use launcher)
-            if (len(compatibleMags) > 2) and (len(set(mission_magazines).intersection(set(compatibleMags))) == 0):
+    # Check all loadouts are valid
+    for loadoutname, loadout in mission_loadouts.items():
+        for weapon in loadout["weapons"]:
+            if (not weapon in CfgWeapons):
                 missionError = True
-                missionLogs.append(f"[No compatible mags] {weapon}")
-    for item in mission_items:
-        if (not (item in CfgMagazines or item in CfgWeapons)):
-            missionError = True
-            missionLogs.append(f"[Missing item] {item}")
-    for attachment in mission_attachments:
-        if (not attachment in CfgWeapons):
-            missionWarning = True
-            missionLogs.append(f"[Missing attachment] {attachment}")
-    for magazine in mission_magazines:
-        if (not (magazine in CfgMagazines or magazine in CfgWeapons)):
-            missionError = True
-            missionLogs.append(f"[Missing magazine] {magazine}")
-    for backpack in mission_backpacks:
-        if (not backpack in CfgVehicles):
-            missionError = True
-            missionLogs.append(f"[Missing backpack] {backpack}")
+                missionLogs.append(f"[Missing weapon] {loadoutname}: {weapon}")
+            else:
+                compatibleMags = CfgWeapons[weapon]["compatibleMagazines"]
+                # check we have at least 1 compatible mag (ignore 0/1 mag weapons, probably single use launcher)
+                if (len(compatibleMags) > 2) and (len(set(loadout["magazines"]).intersection(set(compatibleMags))) == 0):
+                    missionError = True
+                    missionLogs.append(f"[No compatible mags] {loadoutname}: {weapon}")
+        for item in loadout["items"]:
+            if (not (item in CfgMagazines or item in CfgWeapons)):
+                missionError = True
+                missionLogs.append(f"[Missing item] {loadoutname}: {item}")
+        for attachment in loadout["attachments"]:
+            if (not attachment in CfgWeapons):
+                missionWarning = True
+                missionLogs.append(f"[Missing attachment] {loadoutname}: {attachment}")
+        for magazine in loadout["magazines"]:
+            if (not (magazine in CfgMagazines or magazine in CfgWeapons)):
+                missionError = True
+                missionLogs.append(f"[Missing magazine] {loadoutname}: {magazine}")
+        for backpack in loadout["backpacks"]:
+            if (not backpack in CfgVehicles):
+                missionError = True
+                missionLogs.append(f"[Missing backpack] {loadoutname}: {backpack}")
 
     icon = ":green_circle:"
     if (missionError):
@@ -272,7 +274,7 @@ def test_mission(mission_path):
 
         # try tests on staging config if it exists
         if (config_data_staging is not None):
-            icon_staging, test_logs = test_mission_run_checks(config_data_current, mission_world, test_payload)
+            icon_staging, test_logs = test_mission_run_checks(config_data_staging, mission_world, test_payload)
             results_log.extend([f"  {line} [STAGING]" for line in test_logs])
 
     except Exception as e:
@@ -288,7 +290,11 @@ def test_mission(mission_path):
     if (icon_staging != ""): formated_line += f" {icon_staging} |"
 
     # logging.debug(formated_line)
-    return results_log[:5], formated_line
+    if (len(results_log) > 10):
+        note = f"+ {5-len(results_log)} more"
+        results_log = results_log[:10]
+        results_log.append(note)
+    return results_log, formated_line
 
 
 def main():

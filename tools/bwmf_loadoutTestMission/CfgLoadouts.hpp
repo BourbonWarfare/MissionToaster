@@ -94,16 +94,16 @@ class CfgLoadouts {
     #include "Loadouts\_targetLoadout.hpp"
   };
 
-  // Indy factions
-  #include "Loadouts\indy_gear.hpp"
-  class potato_i { // Indy
-    #include "Loadouts\_targetLoadout.hpp"
-  };
+  // // Indy factions
+  // #include "Loadouts\indy_gear.hpp"
+  // class potato_i { // Indy
+  //   #include "Loadouts\_targetLoadout.hpp"
+  // };
 
-  // East Factions
-  #include "Loadouts\east_gear.hpp"
-  class potato_e { // OpFor
-    #include "Loadouts\_targetLoadout.hpp"
-  };
+  // // East Factions
+  // #include "Loadouts\east_gear.hpp"
+  // class potato_e { // OpFor
+  //   #include "Loadouts\_targetLoadout.hpp"
+  // };
 
 };
