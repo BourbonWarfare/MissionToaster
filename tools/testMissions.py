@@ -210,7 +210,7 @@ def test_mission_run_checks(config, mission_world, test_payload):
                 # check we have at least 1 compatible mag (ignore 0/1 mag weapons, probably single use launcher)
                 if (len(compatibleMags) > 2) and (len(set(loadout["magazines"]).intersection(set(compatibleMags))) == 0):
                     if (not loadoutname.endswith("spotter")):
-                        missionLogs.append(f"[No compatible mags] {loadoutname}: {weapon}")
+                        missionLogs.append(f"[No compatible mags] {loadoutname}: {weapon} from {loadout['magazines']}")
                         missionError = True  # spotter weapon can be ignored in most cases
                     else:
                         missionLogs.append(f"[No compatible mags] {loadoutname}: {weapon} [ignored]")
