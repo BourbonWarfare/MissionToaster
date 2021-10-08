@@ -16,9 +16,9 @@ path_sqfvm_exe = os.path.join(path_project, "bin", "sqfvm.exe")
 path_cfgconvert_exe = os.path.join(path_project, "bin", "CfgConvert.exe")
 path_extract_data_sqf = os.path.join(path_project, "tools", "extractMissionData.sqf")
 # config path
-path_config_data_current_json = os.path.join(path_project, "configs", "current.json")
+path_config_data_current_json = os.path.join(path_project, "configs", "new.json")
 config_data_current = None
-path_config_data_staging_json = os.path.join(path_project, "configs", "staging.json")
+path_config_data_staging_json = os.path.join(path_project, "configs", "old.json")
 config_data_staging = None
 
 
@@ -200,6 +200,7 @@ def test_mission_run_checks(config, mission_world, test_payload):
             missionError = True
             missionLogs.append(f"[Missing entity] {entity}")
     # Check all loadouts are valid
+    attachmentWarned = False
     for loadoutname, loadout in mission_loadouts.items():
         for weapon in loadout["weapons"]:
             if (not weapon in CfgWeapons):
@@ -219,7 +220,8 @@ def test_mission_run_checks(config, mission_world, test_payload):
                 missionError = True
                 missionLogs.append(f"[Missing item] {loadoutname}: {item}")
         for attachment in loadout["attachments"]:
-            if (not attachment in CfgWeapons):
+            if attachmentWarned == False and (not attachment in CfgWeapons):
+                attachmentWarned = True
                 missionWarning = True
                 missionLogs.append(f"[Missing attachment] {loadoutname}: {attachment}")
         for magazine in loadout["magazines"]:
@@ -278,7 +280,7 @@ def test_mission(mission_path):
         # try tests on staging config if it exists
         if (config_data_staging is not None):
             icon_staging, test_logs = test_mission_run_checks(config_data_staging, mission_world, test_payload)
-            results_log.extend([f"  {line} [STAGING]" for line in test_logs])
+            results_log.extend([f"  {line} [OldModset]" for line in test_logs])
 
     except Exception as e:
         logging.error(f"{folder_name} threw {e}")
@@ -292,7 +294,7 @@ def test_mission(mission_path):
     formated_line = f"| {folder_name} | {mission_world_description} | {mission_author} | {mission_objectCount} | {mission_size:1.0f}kB | {icon_current} |"
     if (icon_staging != ""): formated_line += f" {icon_staging} |"
 
-    # logging.debug(formated_line)
+    logging.debug(formated_line)
     if (len(results_log) > 10):
         note = f"+ {5-len(results_log)} more"
         results_log = results_log[:10]
@@ -319,7 +321,7 @@ def main():
         body_table.append("| Mission | World | Author | Objects | Size | Result |")
         body_table.append("|------------|------|------|------|------|------------|")
     else:
-        body_table.append("| Mission | World | Author | Objects | Size | Result | Result-Staging |")
+        body_table.append("| Mission | World | Author | Objects | Size | Current | OldModset |")
         body_table.append("|------------|------|------|------|------|------------|------------|")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
